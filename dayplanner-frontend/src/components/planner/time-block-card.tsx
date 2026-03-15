@@ -5,7 +5,7 @@ import React from 'react'
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { Clock, Info, MoreHorizontal } from 'lucide-react'
+import { Clock, MoreHorizontal } from 'lucide-react'
 
 export interface TimeBlock {
   id: string
@@ -74,10 +74,9 @@ export function TimeBlockCard({ block, onToggle }: TimeBlockCardProps) {
       </div>
 
       {block.agent_note && (
-        <div className="mt-1 flex items-start gap-2 p-2 bg-white/50 rounded-xl border border-current/5 text-[11px] font-medium leading-relaxed opacity-80">
-          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-current" />
-          <p className="italic">Agent: {block.agent_note}</p>
-        </div>
+        <p className="text-xs italic text-muted-foreground mt-1 flex items-center gap-1">
+          <span>💡</span> {block.agent_note}
+        </p>
       )}
     </div>
   )

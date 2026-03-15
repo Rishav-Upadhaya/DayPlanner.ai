@@ -31,6 +31,7 @@ class PlanRepository:
                     end_time=block.get('end_time', '09:30'),
                     priority=block.get('priority', 'medium'),
                     category=block.get('category', 'work'),
+                    agent_note=block.get('agent_note'),
                     completed=bool(block.get('completed', False)),
                     order_index=index,
                 )
@@ -61,6 +62,7 @@ class PlanRepository:
                     end_time=block.get('end_time', '09:30'),
                     priority=block.get('priority', 'medium'),
                     category=block.get('category', 'work'),
+                    agent_note=block.get('agent_note'),
                     completed=bool(block.get('completed', False)),
                     order_index=index,
                 )

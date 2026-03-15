@@ -33,8 +33,8 @@ class OpenRouterClient:
                     'X-Title': 'DayPlanner Backend',
                 },
                 temperature=0.3,
-                max_tokens=900,
-                timeout=25,
+                max_tokens=2500,
+                timeout=45,
             )
             response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
             text = _extract_text_from_llm_response(response)
@@ -58,9 +58,9 @@ class OpenRouterClient:
                     {'role': 'user', 'content': user_prompt},
                 ],
                 'temperature': 0.3,
-                'max_tokens': 900,
+                'max_tokens': 2500,
             },
-            timeout=25,
+            timeout=45,
         )
         response.raise_for_status()
         payload = response.json()
@@ -91,8 +91,8 @@ class GeminiFallbackClient:
                 model=model,
                 google_api_key=api_key,
                 temperature=0.3,
-                max_output_tokens=900,
-                timeout=25,
+                max_output_tokens=2500,
+                timeout=45,
             )
             response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
             text = _extract_text_from_llm_response(response)
@@ -117,10 +117,10 @@ class GeminiFallbackClient:
                 ],
                 'generationConfig': {
                     'temperature': 0.3,
-                    'maxOutputTokens': 900,
+                    'maxOutputTokens': 2500,
                 },
             },
-            timeout=25,
+            timeout=45,
         )
         response.raise_for_status()
         payload = response.json()

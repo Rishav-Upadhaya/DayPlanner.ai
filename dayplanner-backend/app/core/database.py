@@ -74,6 +74,11 @@ def run_startup_schema_migrations() -> None:
                     'ALTER TABLE memory_embeddings DROP COLUMN IF EXISTS vector_ref'
                 ))
 
+        if 'plan_blocks' in tables:
+            block_cols = {column['name'] for column in inspector.get_columns('plan_blocks')}
+            if 'agent_note' not in block_cols:
+                connection.execute(text('ALTER TABLE plan_blocks ADD COLUMN agent_note TEXT'))
+
 
 def get_db():
     db = SessionLocal()

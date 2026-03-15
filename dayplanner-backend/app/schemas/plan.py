@@ -8,6 +8,7 @@ class PlanBlockDTO(BaseModel):
     end_time: str
     priority: str = 'medium'
     category: str = 'work'
+    agent_note: str | None = None
     completed: bool = False
 
 

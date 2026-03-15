@@ -65,13 +65,22 @@ def _build_chat_context(db: Session, user_id: str, session_id: str, payload: Cha
         existing_calendar_events = []
 
     memory = memory_service.retrieve_user_context(user_id=user_id, query=payload.content)
+    preference_snippets = memory_service.retrieve_preference_context(user_id=user_id, limit=6)
+    memory_snippets: list[str] = []
+    seen: set[str] = set()
+    for snippet in preference_snippets + memory.snippets:
+        normalized = str(snippet).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        memory_snippets.append(normalized)
     chat_repository = ChatRepository(db)
     recent_messages = [
         {
             'role': message.role,
             'content': message.content,
         }
-        for message in chat_repository.list_recent_messages(session_id=session_id, limit=12)
+        for message in chat_repository.list_recent_messages(session_id=session_id, limit=16)
     ]
 
     previous_day = target_day - timedelta(days=1)
@@ -102,7 +111,7 @@ def _build_chat_context(db: Session, user_id: str, session_id: str, payload: Cha
             'fallback_model': llm_config.fallback_model,
         },
         'calendar_events': existing_calendar_events,
-        'memory_snippets': memory.snippets,
+        'memory_snippets': memory_snippets[:12],
         'recent_messages': recent_messages,
         'previous_day_summary': previous_day_summary,
         'previous_day_blocks': previous_day_blocks,
@@ -120,7 +129,53 @@ def create_session(user_id: str = Depends(get_current_user_id), db: Session = De
 def list_sessions(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)) -> list[dict[str, str]]:
     repository = ChatRepository(db)
     sessions = repository.list_sessions(user_id=user_id)
-    return [{'id': item.id, 'title': item.title} for item in sessions]
+    return [
+        {
+            'id': item.id,
+            'title': item.title,
+            'created_at': item.created_at.isoformat(),
+        }
+        for item in sessions
+    ]
+
+
+@router.get('/sessions/{session_id}')
+def get_session(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> dict:
+    repository = ChatRepository(db)
+    session = repository.get_session(session_id=session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return {
+        'id': session.id,
+        'title': session.title,
+        'created_at': session.created_at.isoformat(),
+    }
+
+
+@router.get('/sessions/{session_id}/messages')
+def get_session_messages(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    repository = ChatRepository(db)
+    session = repository.get_session(session_id=session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    messages = repository.list_recent_messages(session_id=session_id, limit=100)
+    return [
+        {
+            'id': msg.id,
+            'role': msg.role,
+            'content': msg.content,
+            'created_at': msg.created_at.isoformat(),
+        }
+        for msg in messages
+    ]
 
 
 @router.post('/sessions/{session_id}/messages', response_model=ChatResponseDTO)

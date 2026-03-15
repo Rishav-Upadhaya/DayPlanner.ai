@@ -218,6 +218,7 @@ def upgrade() -> None:
     sa.Column('end_time', sa.String(length=5), nullable=False),
     sa.Column('priority', sa.String(length=16), nullable=False),
     sa.Column('category', sa.String(length=32), nullable=False),
+    sa.Column('agent_note', sa.Text(), nullable=True),
     sa.Column('completed', sa.Boolean(), nullable=False),
     sa.Column('order_index', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['plan_id'], ['plans.id'], ),

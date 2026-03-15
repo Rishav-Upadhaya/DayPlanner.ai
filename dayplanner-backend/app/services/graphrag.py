@@ -57,6 +57,32 @@ class GraphRAGService:
         finally:
             db.close()
 
+    def retrieve_preference_context(self, user_id: str, limit: int = 6) -> list[str]:
+        db = SessionLocal()
+        try:
+            stmt = (
+                select(MemoryNode.content)
+                .where(
+                    MemoryNode.user_id == user_id,
+                    MemoryNode.node_type.in_(['preference', 'pattern']),
+                )
+                .order_by(MemoryNode.created_at.desc())
+                .limit(limit)
+            )
+            rows = db.execute(stmt).all()
+            snippets = [row[0] for row in rows if row and row[0]]
+            unique_snippets: list[str] = []
+            seen: set[str] = set()
+            for snippet in snippets:
+                normalized = snippet.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                unique_snippets.append(normalized)
+            return unique_snippets
+        finally:
+            db.close()
+
     def _vector_search(self, db: Session, user_id: str, query_vector: list[float], limit: int) -> list[str]:
         try:
             sql = text(

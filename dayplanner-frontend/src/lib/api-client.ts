@@ -152,6 +152,7 @@ export type ApiPlanBlock = {
   end_time: string
   priority: 'high' | 'medium' | 'low'
   category: string
+  agent_note?: string | null
   completed: boolean
 }
 
@@ -208,6 +209,39 @@ export async function createChatSession(): Promise<{ session_id: string }> {
   })
   if (!response.ok) {
     throw new Error('Failed to create chat session')
+  }
+  return response.json()
+}
+
+export async function listChatSessions(): Promise<Array<{ id: string; title: string; created_at: string }>> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(`${BACKEND_URL}/api/v1/chat/sessions`, { headers })
+  if (!response.ok) {
+    throw new Error('Failed to load sessions')
+  }
+  return response.json()
+}
+
+export async function getSessionMessages(
+  sessionId: string
+): Promise<Array<{ id: string; role: string; content: string; created_at: string }>> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(`${BACKEND_URL}/api/v1/chat/sessions/${sessionId}/messages`, { headers })
+  if (!response.ok) {
+    throw new Error('Failed to load messages')
+  }
+  return response.json()
+}
+
+export async function forceSavePlan(dateForPlan: string, summary: string, forceBlocks: ApiPlanBlock[]): Promise<ApiPlan> {
+  const headers = await getAuthHeaders()
+  const response = await fetch(`${BACKEND_URL}/api/v1/plans/force-save`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ date_for_plan: dateForPlan, summary, force_blocks: forceBlocks }),
+  })
+  if (!response.ok) {
+    throw new Error('Could not save approved plan')
   }
   return response.json()
 }

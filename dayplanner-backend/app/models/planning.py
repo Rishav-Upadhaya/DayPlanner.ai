@@ -29,6 +29,7 @@ class PlanBlock(Base):
     end_time: Mapped[str] = mapped_column(String(5))
     priority: Mapped[str] = mapped_column(String(16), default='medium')
     category: Mapped[str] = mapped_column(String(32), default='work')
+    agent_note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 

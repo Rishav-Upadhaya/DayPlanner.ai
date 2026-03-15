@@ -27,6 +27,7 @@ def _to_plan_dto(plan) -> PlanDTO:
             end_time=block.end_time,
             priority=block.priority,
             category=block.category,
+            agent_note=block.agent_note,
             completed=block.completed,
         )
         for block in sorted(plan.blocks, key=lambda item: item.order_index)
@@ -70,6 +71,26 @@ def generate_plan(
         day=target_day,
         summary=result['summary'],
         blocks=result['blocks'],
+    )
+    return _to_plan_dto(created)
+
+
+@router.post('/force-save', response_model=PlanDTO)
+def force_save_plan(
+    payload: dict,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> PlanDTO:
+    repository = PlanRepository(db)
+    target_day = DateType.fromisoformat(payload.get('date_for_plan', DateType.today().isoformat()))
+    blocks = payload.get('force_blocks', [])
+    summary = payload.get('summary', '')
+
+    created = repository.upsert_plan_for_day(
+        user_id=user_id,
+        day=target_day,
+        summary=summary,
+        blocks=blocks,
     )
     return _to_plan_dto(created)
 

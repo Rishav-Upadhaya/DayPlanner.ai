@@ -9,5 +9,20 @@ class MemoryRetrievalNode:
         entities = state.get('entities', {})
         tasks = entities.get('tasks', []) if isinstance(entities, dict) else []
         query = f"{state.get('intent', '')} {state.get('user_input', '')} {' '.join(tasks)}"
-        context = _rag.retrieve_user_context(user_id=state['user_id'], query=query.strip())
-        return {'memory_snippets': context.snippets}
+        user_id = state.get('user_id', '')
+        if not user_id:
+            return {'memory_snippets': state.get('memory_snippets', [])}
+
+        context = _rag.retrieve_user_context(user_id=user_id, query=query.strip())
+        preferences = _rag.retrieve_preference_context(user_id=user_id, limit=6)
+
+        combined: list[str] = []
+        seen: set[str] = set()
+        for snippet in preferences + context.snippets:
+            normalized = str(snippet).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            combined.append(normalized)
+
+        return {'memory_snippets': combined[:12]}

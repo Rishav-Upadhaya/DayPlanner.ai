@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { TimeBlockCard, type TimeBlock } from "@/components/planner/time-block-card"
+import { NotificationBanner } from "@/components/shared/notification-banner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -34,6 +35,7 @@ const mapApiBlockToTimeBlock = (block: ApiPlanBlock): TimeBlock => ({
   end_time: block.end_time,
   duration_minutes: toMinutes(block.start_time, block.end_time),
   priority: block.priority,
+  agent_note: block.agent_note ?? undefined,
   completed: block.completed,
 })
 
@@ -151,6 +153,8 @@ export default function TodayPage() {
         </div>
       </header>
 
+      <NotificationBanner />
+
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Timeline */}
         <div className="lg:col-span-2 space-y-6">
@@ -170,18 +174,34 @@ export default function TodayPage() {
           </div>
 
           <div className="relative space-y-4 timeline-line">
-            {blocks.map((block) => (
-              <div key={block.id} className="relative z-10 pl-6 group">
-                <div className={cn(
-                  "absolute left-[-1px] top-[1.375rem] w-4 h-4 bg-background rounded-full border-2 border-slate-200 transition-all duration-300 flex items-center justify-center",
-                  block.completed && "border-emerald-500 bg-emerald-50",
-                  "group-hover:border-primary group-hover:scale-110"
-                )}>
-                   {block.completed && <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-in zoom-in duration-300"></div>}
+            {blocks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                <div className="p-4 bg-primary/10 rounded-3xl">
+                  <Sparkles className="h-10 w-10 text-primary" />
                 </div>
-                <TimeBlockCard block={block} onToggle={toggleBlock} />
+                <h3 className="text-xl font-headline font-bold">No plan for today yet</h3>
+                <p className="text-muted-foreground max-w-sm">
+                  Head to <strong>Chat</strong> and tell me what you want to accomplish today.
+                  I'll build your schedule and you can approve it here.
+                </p>
+                <Button asChild className="rounded-xl">
+                  <a href="/chat">Start Planning →</a>
+                </Button>
               </div>
-            ))}
+            ) : (
+              blocks.map((block) => (
+                <div key={block.id} className="relative z-10 pl-6 group">
+                  <div className={cn(
+                    "absolute left-[-1px] top-[1.375rem] w-4 h-4 bg-background rounded-full border-2 border-slate-200 transition-all duration-300 flex items-center justify-center",
+                    block.completed && "border-emerald-500 bg-emerald-50",
+                    "group-hover:border-primary group-hover:scale-110"
+                  )}>
+                     {block.completed && <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-in zoom-in duration-300"></div>}
+                  </div>
+                  <TimeBlockCard block={block} onToggle={toggleBlock} />
+                </div>
+              ))
+            )}
           </div>
 
           {/* Evening Check-in Banner */}
