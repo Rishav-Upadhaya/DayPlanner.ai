@@ -11,9 +11,11 @@ from app.models.planning import Plan
 from app.repositories.memory import MemoryRepository
 from app.repositories.plans import PlanRepository
 from app.schemas.plan import GeneratePlanRequest, PlanDTO, PlanBlockDTO
+from app.services.graphrag import GraphRAGService
 
 router = APIRouter()
 planning_graph = PlanningGraph()
+_graphrag = GraphRAGService()
 
 
 def _to_plan_dto(plan) -> PlanDTO:
@@ -113,6 +115,14 @@ def evening_checkin(plan_id: str, user_id: str = Depends(get_current_user_id), d
         f'blocks ({completion_pct}%).'
     )
     memory_repo.add_node(user_id=user_id, node_type='reflection', content=memory_note, confidence='high')
+    completed_titles = [block.title for block in plan.blocks if block.completed]
+    _graphrag.store_completion_memory(
+        user_id=user_id,
+        plan_date=plan.day.isoformat(),
+        completed=completed_blocks,
+        total=total_blocks,
+        block_titles=completed_titles,
+    )
 
     return {
         'status': 'recorded',

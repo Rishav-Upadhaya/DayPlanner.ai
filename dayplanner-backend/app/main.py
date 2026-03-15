@@ -1,11 +1,15 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.database import Base, engine, run_startup_schema_migrations
+from app.core.database import prepare_legacy_database_for_alembic, run_startup_schema_migrations
+from app.core.rate_limit import RateLimitMiddleware
 from app.models import *  # noqa: F401,F403
 from app.workers.calendar_sync_worker import start_calendar_sync_worker, stop_calendar_sync_worker
 from app.workers.engagement_worker import start_engagement_worker, stop_engagement_worker
@@ -15,7 +19,9 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
+    prepare_legacy_database_for_alembic(alembic_cfg)
+    command.upgrade(alembic_cfg, 'head')
     run_startup_schema_migrations()
     start_calendar_sync_worker()
     start_engagement_worker()
@@ -32,6 +38,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

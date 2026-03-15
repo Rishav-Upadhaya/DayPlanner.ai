@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_access_token_expire_minutes: int = 60
 
     database_url: str = 'sqlite:///./dayplanner.db'
+    redis_url: str = ''
+    encryption_key: str = ''
 
     openrouter_api_key: str = ''
     openrouter_model: str = 'openai/gpt-4o-mini'
@@ -21,6 +23,7 @@ class Settings(BaseSettings):
     google_oauth_client_id: str = ''
     google_oauth_client_secret: str = ''
     google_oauth_redirect_uri: str = ''
+    google_calendar_redirect_uri: str = ''
     google_calendar_webhook_secret: str = ''
     frontend_url: str = 'http://localhost:3000'
 

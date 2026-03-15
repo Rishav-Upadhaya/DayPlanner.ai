@@ -14,13 +14,21 @@ router = APIRouter()
 oauth_client = GoogleOAuthClient()
 
 
+def _get_google_signin_redirect_uri() -> str:
+    settings = get_settings()
+    configured = settings.google_oauth_redirect_uri.strip()
+    if configured:
+        return configured
+    return f"{settings.frontend_url.rstrip('/')}/auth"
+
+
 @router.get('/google/start')
 def google_start() -> dict[str, str]:
     settings = get_settings()
     if not settings.google_oauth_client_id:
         raise HTTPException(status_code=503, detail='Google OAuth is not configured: missing GOOGLE_OAUTH_CLIENT_ID')
 
-    redirect_uri = f"{settings.frontend_url.rstrip('/')}/auth"
+    redirect_uri = _get_google_signin_redirect_uri()
     state = create_oauth_state(purpose='google_signin')
     redirect_url = oauth_client.build_auth_url(
         client_id=settings.google_oauth_client_id,
@@ -72,7 +80,7 @@ def google_callback(code: str, state: str, db: Session = Depends(get_db)) -> dic
     except ValueError as exc:
         raise HTTPException(status_code=400, detail='Invalid OAuth state') from exc
 
-    redirect_uri = f"{settings.frontend_url.rstrip('/')}/auth"
+    redirect_uri = _get_google_signin_redirect_uri()
 
     try:
         token_data = oauth_client.exchange_code(

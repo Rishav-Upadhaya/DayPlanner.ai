@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, Sparkles, LayoutDashboard, Calendar, ChevronRight, FileText } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import { toast } from "@/hooks/use-toast"
-import { createChatSession, getLocalDateISO, sendChatMessage } from "@/lib/api-client"
+import { createChatSession, getLocalDateISO, sendMessageStream } from "@/lib/api-client"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -43,6 +43,7 @@ export function ChatInterface() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const markdownFileInputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     let ignore = false
@@ -64,6 +65,9 @@ export function ChatInterface() {
     const textToSend = customInput || input
     if (!textToSend.trim() || isLoading) return
 
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -71,7 +75,15 @@ export function ChatInterface() {
       type: 'text'
     }
 
-    setMessages(prev => [...prev, userMsg])
+    const assistantMsgId = (Date.now() + 1).toString()
+    const assistantMsg: Message = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      type: 'text'
+    }
+
+    setMessages(prev => [...prev, userMsg, assistantMsg])
     setInput('')
     setIsLoading(true)
 
@@ -83,46 +95,71 @@ export function ChatInterface() {
         setSessionId(activeSessionId)
       }
 
-      const response = await sendChatMessage(activeSessionId, textToSend, getLocalDateISO())
-      localStorage.setItem('dp_today_refresh_at', String(Date.now()))
-      window.dispatchEvent(new CustomEvent('dp_today_refresh'))
+      await sendMessageStream(
+        activeSessionId,
+        textToSend,
+        getLocalDateISO(),
+        (token) => {
+          setMessages((prev) => prev.map((message) => {
+            if (message.id !== assistantMsgId) return message
+            return {
+              ...message,
+              content: message.content + token,
+            }
+          }))
+        },
+        (blocks, summary, saved) => {
+          if (saved) {
+            localStorage.setItem('dp_today_refresh_at', String(Date.now()))
+            window.dispatchEvent(new CustomEvent('dp_today_refresh'))
+            window.dispatchEvent(new CustomEvent('plan-updated'))
+          }
 
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.assistant_reply || response.summary,
-        type: 'text'
-      }
+          if (blocks && blocks.length > 0) {
+            const firstItems = blocks.slice(0, 3).map((item) => item.title).join(', ')
+            if (summary?.trim()) {
+              toast({
+                title: 'Today plan updated',
+                description: `${summary} Tasks: ${firstItems}${blocks.length > 3 ? ', ...' : ''}`,
+              })
+            }
 
-      setMessages(prev => [...prev, assistantMsg])
-
-      // If we got blocks, show a plan preview
-      if (response.blocks && response.blocks.length > 0) {
-        const firstItems = response.blocks.slice(0, 3).map((item) => item.title).join(', ')
-        if (response.summary?.trim()) {
-          toast({
-            title: 'Today plan updated',
-            description: `${response.summary} Tasks: ${firstItems}${response.blocks.length > 3 ? ', ...' : ''}`,
-          })
-        }
-
-        setMessages(prev => [...prev, {
-          id: (Date.now() + 2).toString(),
-          role: 'assistant',
-          content: "I've structured your timeline based on that.",
-          type: 'plan-preview',
-          data: response.blocks
-        }])
-      }
+            setMessages(prev => [...prev, {
+              id: (Date.now() + 2).toString(),
+              role: 'assistant',
+              content: "I've structured your timeline based on that.",
+              type: 'plan-preview',
+              data: blocks
+            }])
+          }
+        },
+        () => {
+          setIsLoading(false)
+        },
+        (errorMessage) => {
+          setMessages((prev) => prev.map((message) => {
+            if (message.id !== assistantMsgId) return message
+            return {
+              ...message,
+              content: `Error: ${errorMessage}`,
+            }
+          }))
+          setIsLoading(false)
+        },
+        abortRef.current.signal
+      )
       
     } catch (error) {
-      console.error(error)
-      setMessages(prev => [...prev, {
-        id: 'error',
-        role: 'assistant',
-        content: "I'm sorry, I hit a snag while planning. Can you try rephrasing?",
-        type: 'text'
-      }])
+      if ((error as Error).name !== 'AbortError') {
+        console.error(error)
+        setMessages((prev) => prev.map((message) => {
+          if (message.id !== assistantMsgId) return message
+          return {
+            ...message,
+            content: "I'm sorry, I hit a snag while planning. Can you try rephrasing?",
+          }
+        }))
+      }
     } finally {
       setIsLoading(false)
     }

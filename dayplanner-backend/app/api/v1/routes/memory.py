@@ -47,7 +47,7 @@ def add_memory_context(
         content=payload.content,
         confidence=payload.confidence,
     )
-    graph_rag.upsert_memory_from_signal(user_id=user_id, signal=payload.content)
+    graph_rag.store_embedding_for_existing_node(node_id=node.id, content=payload.content)
     return MemoryItemDTO(id=node.id, node_type=node.node_type, content=node.content, confidence=node.confidence)
 
 

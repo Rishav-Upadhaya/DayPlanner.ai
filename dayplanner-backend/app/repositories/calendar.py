@@ -1,10 +1,10 @@
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import decrypt_token, encrypt_token
 from app.models.calendar import CalendarAccount, CalendarConflict, CalendarEvent, CalendarOAuthToken
-from app.models.planning import Plan
 
 
 class CalendarRepository:
@@ -69,8 +69,8 @@ class CalendarRepository:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds or 3600)
 
         if token:
-            token.access_token = access_token
-            token.refresh_token = refresh_token or token.refresh_token
+            token.access_token = encrypt_token(access_token)
+            token.refresh_token = encrypt_token(refresh_token) if refresh_token else token.refresh_token
             token.scope = scope
             token.token_type = token_type
             token.expires_at = expires_at
@@ -82,8 +82,8 @@ class CalendarRepository:
 
         token = CalendarOAuthToken(
             account_id=account.id,
-            access_token=access_token,
-            refresh_token=refresh_token,
+            access_token=encrypt_token(access_token),
+            refresh_token=encrypt_token(refresh_token),
             scope=scope,
             token_type=token_type,
             expires_at=expires_at,
@@ -101,7 +101,11 @@ class CalendarRepository:
             .where(CalendarAccount.user_id == user_id, CalendarAccount.provider == 'google')
             .order_by(CalendarOAuthToken.updated_at.desc())
         )
-        return self.db.scalar(stmt)
+        token = self.db.scalar(stmt)
+        if token:
+            token.access_token = decrypt_token(token.access_token)
+            token.refresh_token = decrypt_token(token.refresh_token)
+        return token
 
     def list_user_ids_with_google_tokens(self) -> list[str]:
         stmt = (
@@ -121,9 +125,9 @@ class CalendarRepository:
         scope: str | None = None,
         token_type: str | None = None,
     ) -> CalendarOAuthToken:
-        token.access_token = access_token
+        token.access_token = encrypt_token(access_token)
         if refresh_token:
-            token.refresh_token = refresh_token
+            token.refresh_token = encrypt_token(refresh_token)
         if scope:
             token.scope = scope
         if token_type:
@@ -208,52 +212,36 @@ class CalendarRepository:
 
     def generate_conflicts_for_day(self, user_id: str, day: str) -> list[CalendarConflict]:
         target_day = date.fromisoformat(day)
-        day_start = datetime.combine(target_day, time.min).replace(tzinfo=timezone.utc)
-        day_end = datetime.combine(target_day, time.max).replace(tzinfo=timezone.utc)
+        events = self.list_events_for_day(user_id=user_id, day=day)
 
-        account_ids = [row.id for row in self.list_accounts(user_id=user_id)]
-        event_stmt = select(CalendarEvent).where(
-            CalendarEvent.account_id.in_(account_ids),
-            and_(CalendarEvent.starts_at <= day_end, CalendarEvent.ends_at >= day_start),
-        )
-        events = list(self.db.scalars(event_stmt).all())
+        self.db.query(CalendarConflict).filter(
+            CalendarConflict.user_id == user_id,
+            CalendarConflict.day == target_day,
+        ).delete(synchronize_session=False)
 
-        plan_stmt = select(Plan).where(Plan.user_id == user_id, Plan.day == target_day)
-        plans = list(self.db.scalars(plan_stmt).all())
-        blocks = [block for plan in plans for block in plan.blocks]
+        if len(events) < 2:
+            self.db.commit()
+            return []
 
-        if not events or not blocks:
-            return self.list_conflicts(user_id=user_id, day=day)
-
-        existing_stmt = select(CalendarConflict).where(CalendarConflict.user_id == user_id, CalendarConflict.day == target_day)
-        existing_conflicts = list(self.db.scalars(existing_stmt).all())
-        existing_descriptions = {item.description for item in existing_conflicts}
-
-        created = []
-        for event in events:
-            for block in blocks:
-                block_start = datetime.combine(target_day, self._parse_hhmm(block.start_time)).replace(tzinfo=timezone.utc)
-                block_end = datetime.combine(target_day, self._parse_hhmm(block.end_time)).replace(tzinfo=timezone.utc)
-                overlaps = event.starts_at < block_end and event.ends_at > block_start
-                if not overlaps:
+        created: list[CalendarConflict] = []
+        for index, first in enumerate(events):
+            for second in events[index + 1:]:
+                if not self._times_overlap(first.starts_at, first.ends_at, second.starts_at, second.ends_at):
                     continue
 
-                description = f'Conflict on {day}: {event.title} overlaps with plan block "{block.title}".'
-                if description in existing_descriptions:
-                    continue
-
+                description = (
+                    f'Conflict on {day}: "{first.title}" '
+                    f'({first.starts_at.strftime("%H:%M")}-{first.ends_at.strftime("%H:%M")}) overlaps '
+                    f'with "{second.title}" ({second.starts_at.strftime("%H:%M")}-{second.ends_at.strftime("%H:%M")}).'
+                )
                 conflict = CalendarConflict(user_id=user_id, day=target_day, description=description, status='open')
                 self.db.add(conflict)
                 created.append(conflict)
-                existing_descriptions.add(description)
 
         self.db.commit()
         for item in created:
             self.db.refresh(item)
-
-        if created:
-            return created + existing_conflicts
-        return existing_conflicts
+        return created
 
     def resolve_conflict(self, user_id: str, conflict_id: str, resolution: str) -> CalendarConflict | None:
         stmt = select(CalendarConflict).where(CalendarConflict.id == conflict_id, CalendarConflict.user_id == user_id)
@@ -305,3 +293,7 @@ class CalendarRepository:
     def _parse_hhmm(value: str) -> time:
         hours, minutes = value.split(':')
         return time(hour=int(hours), minute=int(minutes))
+
+    @staticmethod
+    def _times_overlap(start1: datetime, end1: datetime, start2: datetime, end2: datetime) -> bool:
+        return start1 < end2 and start2 < end1

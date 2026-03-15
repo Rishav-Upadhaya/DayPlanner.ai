@@ -236,6 +236,70 @@ export async function sendChatMessage(
   return response.json()
 }
 
+export type StreamEvent =
+  | { type: 'token'; content: string }
+  | { type: 'plan'; blocks: ApiPlanBlock[]; summary: string; saved: boolean }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+
+export async function sendMessageStream(
+  sessionId: string,
+  content: string,
+  planDate: string,
+  onToken: (token: string) => void,
+  onPlan: (blocks: ApiPlanBlock[], summary: string, saved: boolean) => void,
+  onDone: () => void,
+  onError: (message: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const headers = await getAuthHeaders()
+
+  const response = await fetch(
+    `${BACKEND_URL}/api/v1/chat/sessions/${sessionId}/messages/stream`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ content, plan_date: planDate }),
+      signal,
+    }
+  )
+
+  if (!response.ok) {
+    onError(`Request failed: ${response.status}`)
+    return
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    onError('No response body')
+    return
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      try {
+        const event: StreamEvent = JSON.parse(line.slice(6))
+        if (event.type === 'token') onToken(event.content)
+        else if (event.type === 'plan') onPlan(event.blocks, event.summary, event.saved)
+        else if (event.type === 'done') onDone()
+        else if (event.type === 'error') onError(event.message)
+      } catch {
+      }
+    }
+  }
+}
+
 export type ApiCalendarAccount = {
   id: string
   provider: string

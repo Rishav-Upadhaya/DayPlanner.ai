@@ -22,6 +22,14 @@ google_calendar_client = GoogleCalendarClient()
 logger = logging.getLogger(__name__)
 
 
+def _get_google_calendar_redirect_uri() -> str:
+    settings = get_settings()
+    configured = settings.google_calendar_redirect_uri.strip()
+    if configured:
+        return configured
+    return f"{settings.frontend_url.rstrip('/')}/auth/callback/google-calendar"
+
+
 @router.get('/accounts', response_model=list[CalendarAccountDTO])
 def list_accounts(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)) -> list[CalendarAccountDTO]:
     repository = CalendarRepository(db)
@@ -49,7 +57,7 @@ def connect_google(user_id: str = Depends(get_current_user_id), db: Session = De
     if not app_user:
         raise HTTPException(status_code=404, detail='Logged-in user not found')
 
-    redirect_uri = f"{settings.frontend_url.rstrip('/')}/auth/callback/google-calendar"
+    redirect_uri = _get_google_calendar_redirect_uri()
     state = create_oauth_state(purpose='calendar_connect', user_id=user_id)
 
     redirect_url = oauth_client.build_auth_url(
@@ -80,7 +88,7 @@ def connect_google_callback(code: str, state: str, user_id: str = Depends(get_cu
     except ValueError as exc:
         raise HTTPException(status_code=400, detail='Invalid OAuth state') from exc
 
-    redirect_uri = f"{settings.frontend_url.rstrip('/')}/auth/callback/google-calendar"
+    redirect_uri = _get_google_calendar_redirect_uri()
     try:
         token_data = oauth_client.exchange_code(
             client_id=settings.google_oauth_client_id,

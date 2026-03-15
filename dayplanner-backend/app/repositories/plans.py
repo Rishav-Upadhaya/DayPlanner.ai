@@ -14,6 +14,9 @@ class PlanRepository:
         stmt = select(Plan).where(Plan.user_id == user_id, Plan.day == day)
         return self.db.scalar(stmt)
 
+    def get_by_day_iso(self, user_id: str, day_iso: str) -> Plan | None:
+        return self.get_by_day(user_id=user_id, day=date.fromisoformat(day_iso))
+
     def create_plan(self, user_id: str, day: date, summary: str, blocks: list[dict]) -> Plan:
         plan = Plan(user_id=user_id, day=day, summary=summary)
         self.db.add(plan)

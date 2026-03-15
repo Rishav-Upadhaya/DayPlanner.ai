@@ -1,7 +1,8 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -33,6 +34,16 @@ class MemoryEmbedding(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     node_id: Mapped[str] = mapped_column(String(36), ForeignKey('memory_nodes.id'), index=True)
-    embedding_model: Mapped[str] = mapped_column(String(64), default='text-embedding-3-small')
-    vector_ref: Mapped[str] = mapped_column(Text, default='')
+    embedding_model: Mapped[str] = mapped_column(String(64), default='all-MiniLM-L6-v2')
+    embedding: Mapped[list] = mapped_column(Vector(384), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index(
+            'ix_memory_embeddings_ivfflat',
+            embedding,
+            postgresql_using='ivfflat',
+            postgresql_with={'lists': 100},
+            postgresql_ops={'embedding': 'vector_cosine_ops'},
+        ),
+    )

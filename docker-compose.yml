@@ -65,6 +65,7 @@ services:
     build:
       context: ./dayplanner-frontend
       dockerfile: Dockerfile
+      target: development
     container_name: dayplanner-frontend
     restart: unless-stopped
     depends_on:

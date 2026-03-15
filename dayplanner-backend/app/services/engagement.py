@@ -3,7 +3,11 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.integrations.llm_client import AgentLLMGateway
 from app.repositories.engagement import EngagementRepository
+from app.repositories.llm import LLMRepository
+from app.repositories.plans import PlanRepository
+from app.services.graphrag import GraphRAGService
 
 
 class EngagementPromptService:
@@ -41,10 +45,15 @@ class EngagementPromptService:
 
             weekday = local_now.strftime('%A')
             if should_send_morning and state is not None:
+                morning_message = self._generate_morning_message(
+                    user_id=user.id,
+                    weekday=weekday,
+                    local_date=local_date,
+                )
                 self.repository.create_notification(
                     user_id=user.id,
                     kind='engagement',
-                    message=f'Good morning! Ready to plan your {weekday}? Open chat and share today\'s priorities.',
+                    message=morning_message,
                 )
                 state.last_morning_prompt_date = local_date
                 has_changes = True
@@ -85,3 +94,60 @@ class EngagementPromptService:
         hour = max(0, min(23, hour))
         minute = max(0, min(59, minute))
         return hour * 60 + minute
+
+    def _generate_morning_message(self, user_id: str, weekday: str, local_date: str) -> str:
+        try:
+            llm_config = LLMRepository(self.db).get_or_create_config(user_id=user_id)
+            if not llm_config.primary_api_key or not llm_config.primary_model:
+                raise ValueError('No LLM configured')
+
+            from datetime import date, timedelta
+
+            yesterday = (date.fromisoformat(local_date) - timedelta(days=1)).isoformat()
+            yesterday_plan = PlanRepository(self.db).get_by_day_iso(user_id=user_id, day_iso=yesterday)
+
+            completion_context = ''
+            if yesterday_plan and yesterday_plan.blocks:
+                completed = sum(1 for block in yesterday_plan.blocks if block.completed)
+                total = len(yesterday_plan.blocks)
+                completion_context = f'Yesterday ({yesterday}): completed {completed}/{total} tasks.'
+
+            memory = GraphRAGService().retrieve_user_context(
+                user_id=user_id,
+                query='morning planning priorities goals',
+            )
+            memory_context = ' | '.join(memory.snippets[:3]) if memory.snippets else ''
+
+            system_prompt = (
+                'You are a friendly, energizing daily planning assistant. '
+                'Generate a SHORT (2-3 sentences) personalized morning briefing. '
+                'Be warm, motivating, and specific. Mention yesterday if available. '
+                'End with one actionable suggestion for today.'
+            )
+            user_prompt = (
+                f"User's morning — {weekday}, {local_date}.\n"
+                f'{completion_context}\n'
+                f'User preferences/patterns: {memory_context}\n'
+                'Generate a brief, personalized morning briefing.'
+            )
+
+            gateway = AgentLLMGateway()
+            generated = gateway.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                primary_provider=llm_config.primary_provider,
+                primary_api_key=llm_config.primary_api_key,
+                primary_model=llm_config.primary_model,
+                fallback_provider=llm_config.fallback_provider,
+                fallback_api_key=llm_config.fallback_api_key,
+                fallback_model=llm_config.fallback_model,
+            )
+            return generated.strip() or (
+                f'Good morning! Ready to make the most of your {weekday}? '
+                "Open chat and share today's priorities."
+            )
+        except Exception:
+            return (
+                f'Good morning! Ready to make the most of your {weekday}? '
+                "Open chat and share today's priorities."
+            )
