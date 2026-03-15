@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: dayplanner-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dayplanner
+      POSTGRES_USER: dayplanner
+      POSTGRES_PASSWORD: dayplanner
+    ports:
+      - "5432:5432"
+    volumes:
+      - dayplanner_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dayplanner -d dayplanner"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:latest
+    container_name: dayplanner-adminer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  backend:
+    build:
+      context: ./dayplanner-backend
+      dockerfile: Dockerfile
+    container_name: dayplanner-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./dayplanner-backend/.env
+    environment:
+      APP_ENV: development
+      APP_NAME: DayPlanner Backend
+      API_V1_PREFIX: /api/v1
+      APP_SECRET_KEY: change-me-in-production
+      APP_ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      DATABASE_URL: postgresql+psycopg2://dayplanner:dayplanner@postgres:5432/dayplanner
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      FRONTEND_URL: http://localhost:9002
+      ENABLE_BACKGROUND_SYNC: ${ENABLE_BACKGROUND_SYNC:-true}
+      BACKGROUND_SYNC_INTERVAL_SECONDS: ${BACKGROUND_SYNC_INTERVAL_SECONDS:-300}
+      ENABLE_BACKGROUND_SYNC_LEADER_LOCK: ${ENABLE_BACKGROUND_SYNC_LEADER_LOCK:-true}
+      BACKGROUND_SYNC_LEADER_LOCK_ID: ${BACKGROUND_SYNC_LEADER_LOCK_ID:-424242}
+      CORS_ALLOW_ORIGINS: http://localhost:9002,http://localhost:3000
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
+    volumes:
+      - ./dayplanner-backend:/app
+
+  frontend:
+    build:
+      context: ./dayplanner-frontend
+      dockerfile: Dockerfile
+    container_name: dayplanner-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "9002:9002"
+    volumes:
+      - ./dayplanner-frontend:/app
+      - dayplanner_frontend_node_modules:/app/node_modules
+      - dayplanner_frontend_next:/app/.next
+
+volumes:
+  dayplanner_pgdata:
+  dayplanner_frontend_node_modules:
+  dayplanner_frontend_next:
